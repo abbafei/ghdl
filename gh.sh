@@ -6,10 +6,21 @@ WGET_CMD="wget -O -"
 
 
 
+mkdir_ine(){
+	local DIRNAME="$1"
+
+	if [ ! -d "$DIRNAME" ]; then
+		printf 'Creating directory "%s".\n' "$DIRNAME" 1>&2
+		mkdir "$DIRNAME"
+	fi
+}
+
+
 get_iteminfo(){
 	local GH_USER="$1"
 	local GH_ITEMTYPE="$2"
 
+	printf 'Downloading %s info.\n' "$GH_ITEMTYPE" 1>&2
 	echo "$($WGET_CMD "https://api.github.com/users/$GH_USER/$GH_ITEMTYPE")"
 }
 
@@ -67,7 +78,8 @@ get_item(){
 		GH_INFO="$2"
 
 		GH_SPEC="$(get_itemspec "$GH_ITEMTYPE" "$GH_INFO")"
-		mkdir -p "$GH_SPEC"
+		printf 'Downloading %s "%s"...\n' "$GH_ITEMTYPE" "$GH_SPEC" 1>&2
+		mkdir_ine "$GH_SPEC"
 		cd "$GH_SPEC"
 		case "$GH_ITEMTYPE" in repos) local NAME_KEY='git_url';; gists) local NAME_KEY='git_pull_url';; esac
 		git clone "$(echo "$GH_INFO" | jq --raw-output ".$NAME_KEY" )" code
@@ -77,6 +89,7 @@ get_item(){
 			git clone "$(echo "$GH_INFO" | jq --raw-output ".clone_url" | sed -e 's/\.git$//' ).wiki" wiki
 			(if [ ! -z "$(find . -name wiki -type d)" ]; then cd wiki; git status 2>&1 >/dev/null && git pull --all; fi)
 		fi 
+		printf 'Finished downloading %s "%s".\n' "$GH_ITEMTYPE" "$GH_SPEC" 1>&2
 	)
 }
 
@@ -85,15 +98,20 @@ get_items(){
 	local GH_ITEMTYPE="$1"
 	local GH_ITEMINFO="$2"
 
-	for i in $(get_index "$GH_ITEMTYPE" "$GH_ITEMINFO"); do
-		GH_INFO="$(get_info_id "$GH_ITEMTYPE" "$GH_ITEMINFO" "$i")"
-		GH_SPEC="$(get_itemspec "$GH_ITEMTYPE" "$GH_INFO")"
+	local GH_INDEX="$(get_index "$GH_ITEMTYPE" "$GH_ITEMINFO")"
+	if [ ! -z "$GH_INDEX" ]; then
 		(
-			mkdir -p "$GH_ITEMTYPE"
+			printf 'Downloading %s...\n' "$GH_ITEMTYPE" 1>&2
+			mkdir_ine "$GH_ITEMTYPE"
 			cd "$GH_ITEMTYPE"
-			get_item "$GH_ITEMTYPE" "$GH_INFO"
+			for i in $GH_INDEX; do
+				GH_INFO="$(get_info_id "$GH_ITEMTYPE" "$GH_ITEMINFO" "$i")"
+				GH_SPEC="$(get_itemspec "$GH_ITEMTYPE" "$GH_INFO")"
+				get_item "$GH_ITEMTYPE" "$GH_INFO"
+			done
+			printf 'Finished downloading %s.\n' "$GH_ITEMTYPE" 1>&2
 		)
-	done
+	fi
 }
 
 
@@ -116,7 +134,7 @@ if [ "$1" = "--help" ] || [ -z "$GH_USER" ]; then
 	echo "$HELPMSG"
 else
 	(
-		mkdir -p "$GH_USER"
+		mkdir_ine "$GH_USER"
 		cd "$GH_USER"
 		if [ -z "$GH_ITEMTYPE" ]; then
 			for GH_ITEMTYPE in 'gists' 'repos'; do
@@ -129,7 +147,7 @@ else
 				get_items "$GH_ITEMTYPE" "$GH_ITEMINFO"
 			else
 				(
-					mkdir -p "$GH_ITEMTYPE"
+					mkdir_ine "$GH_ITEMTYPE"
 					cd "$GH_ITEMTYPE"
 					get_item "$GH_ITEMTYPE" "$(get_info_name "$GH_ITEMTYPE" "$(get_iteminfo "$GH_USER" "$GH_ITEMTYPE")" "$GH_ITEM")"
 				)
